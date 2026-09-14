@@ -20,10 +20,9 @@ pub fn router() -> Router<AppState> {
 }
 
 async fn status(State(state): State<AppState>) -> Result<Json<serde_json::Value>, AppError> {
-    let configured: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM tenants)")
-            .fetch_one(&state.db)
-            .await?;
+    let configured: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM tenants)")
+        .fetch_one(&state.db)
+        .await?;
     let cfg = config::load(&state.db).await?;
     Ok(Json(json!({
         "configured": configured,
@@ -49,10 +48,9 @@ async fn setup(
     State(state): State<AppState>,
     Json(body): Json<SetupRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let configured: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM tenants)")
-            .fetch_one(&state.db)
-            .await?;
+    let configured: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM tenants)")
+        .fetch_one(&state.db)
+        .await?;
     if configured {
         return Err(AppError::Forbidden);
     }
@@ -78,13 +76,12 @@ async fn setup(
         .collect::<String>();
 
     // 1. Cria o primeiro tenant
-    let tenant_id: uuid::Uuid = sqlx::query_scalar(
-        "INSERT INTO tenants (name, slug) VALUES ($1, $2) RETURNING id",
-    )
-    .bind(body.tenant_name.trim())
-    .bind(&slug)
-    .fetch_one(&state.db)
-    .await?;
+    let tenant_id: uuid::Uuid =
+        sqlx::query_scalar("INSERT INTO tenants (name, slug) VALUES ($1, $2) RETURNING id")
+            .bind(body.tenant_name.trim())
+            .bind(&slug)
+            .fetch_one(&state.db)
+            .await?;
 
     // 2. Cria o super admin (tenant_id = NULL)
     let password_hash = hash_password(&body.password)?;
@@ -115,5 +112,7 @@ async fn setup(
     config::ensure_tenant_install_code(&state.db, tenant_id).await?;
 
     let token = issue_token(user.id, &user.role, None)?;
-    Ok(Json(json!({ "token": token, "user": user, "tenant_id": tenant_id })))
+    Ok(Json(
+        json!({ "token": token, "user": user, "tenant_id": tenant_id }),
+    ))
 }

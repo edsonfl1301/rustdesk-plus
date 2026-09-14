@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 // Bump este número ao mudar agent/main.go ou installer/main.go.
 // Todos os agentes já instalados se auto-atualizarão ao detectar a divergência.
-pub const INSTALLER_BUILD: &str = "15";
+pub const INSTALLER_BUILD: &str = "17";
 
 fn run(command: &mut Command, description: &str) -> anyhow::Result<()> {
     let output = command.output()?;
@@ -81,8 +81,7 @@ pub fn build(
     }
 
     let source_root = PathBuf::from(
-        std::env::var("INSTALLER_SOURCE_DIR")
-            .unwrap_or_else(|_| "/app/build-src".to_string()),
+        std::env::var("INSTALLER_SOURCE_DIR").unwrap_or_else(|_| "/app/build-src".to_string()),
     );
     let work_root = std::env::temp_dir().join(format!("rustdesk-plus-{}", Uuid::new_v4()));
     let agent_dir = work_root.join("agent");

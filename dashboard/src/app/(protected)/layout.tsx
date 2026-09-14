@@ -11,6 +11,8 @@ const navItems = [
     icon: <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9.293 2.293a1 1 0 0 1 1.414 0l7 7A1 1 0 0 1 17 11h-1v6a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-6H3a1 1 0 0 1-.707-1.707l7-7Z" clipRule="evenodd" /></svg> },
   { href: "/devices", label: "Dispositivos",
     icon: <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M2 4.25A2.25 2.25 0 0 1 4.25 2h11.5A2.25 2.25 0 0 1 18 4.25v8.5A2.25 2.25 0 0 1 15.75 15h-3.105a3.501 3.501 0 0 1 1.1 1.677A.75.75 0 0 1 13 17.5H7a.75.75 0 0 1-.745-.823A3.501 3.501 0 0 1 7.355 15H4.25A2.25 2.25 0 0 1 2 12.75v-8.5Z" clipRule="evenodd" /></svg> },
+  { href: "/audit", label: "Auditoria",
+    icon: <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 1.5a1 1 0 0 1 .447.106l6 3A1 1 0 0 1 17 5.5V10c0 4.1-2.512 7.132-6.553 8.394a1.5 1.5 0 0 1-.894 0C5.512 17.132 3 14.1 3 10V5.5a1 1 0 0 1 .553-.894l6-3A1 1 0 0 1 10 1.5Zm3.03 6.47a.75.75 0 0 0-1.06-1.06L9 9.878 8.03 8.91a.75.75 0 0 0-1.06 1.06l1.5 1.5a.75.75 0 0 0 1.06 0l3.5-3.5Z" clipRule="evenodd" /></svg> },
   { href: "/terminal", label: "Terminal",
     icon: <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3.25 3A2.25 2.25 0 0 0 1 5.25v9.5A2.25 2.25 0 0 0 3.25 17h13.5A2.25 2.25 0 0 0 19 14.75v-9.5A2.25 2.25 0 0 0 16.75 3H3.25Zm.943 8.752a.75.75 0 0 1 .055-1.06L6.836 9l-2.588-1.693a.75.75 0 1 1 .834-1.254l3.25 2.13a.75.75 0 0 1 0 1.254l-3.25 2.13a.75.75 0 0 1-1.06-.055ZM9.75 11.25a.75.75 0 0 0 0 1.5h3.5a.75.75 0 0 0 0-1.5h-3.5Z" clipRule="evenodd" /></svg> },
   { href: "/scripts", label: "Scripts",

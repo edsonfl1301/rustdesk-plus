@@ -18,7 +18,8 @@ use crate::{
     error::AppError,
     models::{
         Branch, CreateBranch, CreateTag, CreateTenant, CreateUser, Device, ExecRequest,
-        LoginRequest, PatchDevice, SaveServerConfig, SetDeviceBranch, Stats, Tag, Tenant, TenantBranding, User,
+        LoginRequest, PatchDevice, ResetUserPassword, SaveServerConfig, SetDeviceBranch, Stats,
+        Tag, Tenant, TenantBranding, User,
     },
     state::{agent_key, AppState},
 };
@@ -28,6 +29,7 @@ pub fn router() -> Router<AppState> {
         .route("/admin/login", post(login))
         .route("/admin/users", get(list_users).post(create_user))
         .route("/admin/users/:id", delete(delete_user))
+        .route("/admin/users/:id/password", post(reset_user_password))
         .route("/admin/branches", get(list_branches).post(create_branch))
         .route("/admin/branches/:id", delete(delete_branch))
         .route("/admin/devices", get(list_devices))
@@ -35,12 +37,18 @@ pub fn router() -> Router<AppState> {
             "/admin/devices/:id",
             get(get_device).delete(delete_device).post(patch_device),
         )
-        .route("/admin/devices/:id", axum::routing::patch(patch_device_patch))
+        .route(
+            "/admin/devices/:id",
+            axum::routing::patch(patch_device_patch),
+        )
         .route("/admin/devices/:id/restore", post(restore_device))
         .route("/admin/devices/:id/purge", delete(purge_device))
         .route("/admin/devices/:id/branch", post(set_device_branch))
         .route("/admin/devices/:id/favorite", post(toggle_favorite))
-        .route("/admin/devices/:id/tags", get(list_device_tags).post(add_device_tag))
+        .route(
+            "/admin/devices/:id/tags",
+            get(list_device_tags).post(add_device_tag),
+        )
         .route("/admin/devices/:id/tags/:tag_id", delete(remove_device_tag))
         .route("/admin/tags", get(list_tags).post(create_tag))
         .route("/admin/tags/:id", delete(delete_tag))
@@ -88,16 +96,22 @@ async fn login(
 ) -> Result<Json<serde_json::Value>, AppError> {
     // Super admin: tenant_id IS NULL
     // Outros usuários: UNIQUE(tenant_id, email) — localiza pelo email diretamente
-    let user = sqlx::query_as::<_, User>(
-        "SELECT * FROM users WHERE email = $1 ORDER BY (tenant_id IS NULL) DESC LIMIT 1",
+    let users = sqlx::query_as::<_, User>(
+        "SELECT * FROM users WHERE LOWER(email) = LOWER($1) ORDER BY (tenant_id IS NULL) DESC",
     )
     .bind(&body.email)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::Unauthorized)?;
+    .fetch_all(&state.db)
+    .await?;
 
-    if !verify_password(&body.password, &user.password_hash) {
-        return Err(AppError::Unauthorized);
+    let mut matches = users
+        .into_iter()
+        .filter(|candidate| verify_password(&body.password, &candidate.password_hash));
+    let user = matches.next().ok_or(AppError::Unauthorized)?;
+    if matches.next().is_some() {
+        return Err(AppError::BadRequest(
+            "email e senha correspondem a mais de um cliente; use credenciais diferentes"
+                .to_string(),
+        ));
     }
 
     let token = issue_token(user.id, &user.role, user.tenant_id)?;
@@ -147,15 +161,16 @@ async fn create_tenant(
         return Err(AppError::Forbidden);
     }
     if body.name.trim().is_empty() || body.slug.trim().is_empty() {
-        return Err(AppError::BadRequest("nome e slug são obrigatórios".to_string()));
+        return Err(AppError::BadRequest(
+            "nome e slug são obrigatórios".to_string(),
+        ));
     }
-    let tenant = sqlx::query_as::<_, Tenant>(
-        "INSERT INTO tenants (name, slug) VALUES ($1, $2) RETURNING *",
-    )
-    .bind(body.name.trim())
-    .bind(body.slug.trim())
-    .fetch_one(&state.db)
-    .await?;
+    let tenant =
+        sqlx::query_as::<_, Tenant>("INSERT INTO tenants (name, slug) VALUES ($1, $2) RETURNING *")
+            .bind(body.name.trim())
+            .bind(body.slug.trim())
+            .fetch_one(&state.db)
+            .await?;
     // Gera senha e código de instalação do tenant
     config::ensure_tenant_password(&state.db, tenant.id).await?;
     config::ensure_tenant_install_code(&state.db, tenant.id).await?;
@@ -198,8 +213,14 @@ async fn download_installer(
     let bytes = tokio::fs::read(path).await.map_err(anyhow::Error::new)?;
 
     Response::builder()
-        .header(CONTENT_TYPE, "application/vnd.microsoft.portable-executable")
-        .header(CONTENT_DISPOSITION, "attachment; filename=\"rustdesk-installer.exe\"")
+        .header(
+            CONTENT_TYPE,
+            "application/vnd.microsoft.portable-executable",
+        )
+        .header(
+            CONTENT_DISPOSITION,
+            "attachment; filename=\"rustdesk-installer.exe\"",
+        )
         .header(CONTENT_LENGTH, bytes.len().to_string())
         .body(Body::from(bytes))
         .map_err(|e| anyhow::Error::new(e).into())
@@ -214,12 +235,11 @@ async fn list_users(
 ) -> Result<Json<Vec<User>>, AppError> {
     auth.require_admin()?;
     let tid = tenant_from_headers(&auth, &headers)?;
-    let users = sqlx::query_as::<_, User>(
-        "SELECT * FROM users WHERE tenant_id = $1 ORDER BY created_at",
-    )
-    .bind(tid)
-    .fetch_all(&state.db)
-    .await?;
+    let users =
+        sqlx::query_as::<_, User>("SELECT * FROM users WHERE tenant_id = $1 ORDER BY created_at")
+            .bind(tid)
+            .fetch_all(&state.db)
+            .await?;
     Ok(Json(users))
 }
 
@@ -266,6 +286,29 @@ async fn delete_user(
     Ok(Json(json!({ "ok": true })))
 }
 
+async fn reset_user_password(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(body): Json<ResetUserPassword>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    auth.require_admin()?;
+    let tid = tenant_from_headers(&auth, &headers)?;
+    let password_hash = hash_password(&body.password)?;
+    let result =
+        sqlx::query("UPDATE users SET password_hash = $1 WHERE id = $2 AND tenant_id = $3")
+            .bind(password_hash)
+            .bind(id)
+            .bind(tid)
+            .execute(&state.db)
+            .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound);
+    }
+    Ok(Json(json!({ "ok": true })))
+}
+
 // ── Branches ──────────────────────────────────────────────────────────────────
 
 async fn list_branches(
@@ -274,12 +317,11 @@ async fn list_branches(
     headers: HeaderMap,
 ) -> Result<Json<Vec<Branch>>, AppError> {
     let tid = tenant_from_headers(&auth, &headers)?;
-    let branches = sqlx::query_as::<_, Branch>(
-        "SELECT * FROM branches WHERE tenant_id = $1 ORDER BY name",
-    )
-    .bind(tid)
-    .fetch_all(&state.db)
-    .await?;
+    let branches =
+        sqlx::query_as::<_, Branch>("SELECT * FROM branches WHERE tenant_id = $1 ORDER BY name")
+            .bind(tid)
+            .fetch_all(&state.db)
+            .await?;
     Ok(Json(branches))
 }
 
@@ -369,14 +411,13 @@ async fn get_device(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Device>, AppError> {
     let tid = tenant_from_headers(&auth, &headers)?;
-    let device = sqlx::query_as::<_, Device>(
-        "SELECT * FROM devices WHERE id = $1 AND tenant_id = $2",
-    )
-    .bind(id)
-    .bind(tid)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
+    let device =
+        sqlx::query_as::<_, Device>("SELECT * FROM devices WHERE id = $1 AND tenant_id = $2")
+            .bind(id)
+            .bind(tid)
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or(AppError::NotFound)?;
     Ok(Json(device))
 }
 
@@ -394,10 +435,10 @@ async fn delete_device(
         "UPDATE devices SET deleted_at = now(), online = false \
          WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
     )
-        .bind(id)
-        .bind(tid)
-        .execute(&state.db)
-        .await?;
+    .bind(id)
+    .bind(tid)
+    .execute(&state.db)
+    .await?;
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -531,12 +572,10 @@ async fn list_tags(
     headers: HeaderMap,
 ) -> Result<Json<Vec<Tag>>, AppError> {
     let tid = tenant_from_headers(&auth, &headers)?;
-    let tags = sqlx::query_as::<_, Tag>(
-        "SELECT * FROM tags WHERE tenant_id = $1 ORDER BY name",
-    )
-    .bind(tid)
-    .fetch_all(&state.db)
-    .await?;
+    let tags = sqlx::query_as::<_, Tag>("SELECT * FROM tags WHERE tenant_id = $1 ORDER BY name")
+        .bind(tid)
+        .fetch_all(&state.db)
+        .await?;
     Ok(Json(tags))
 }
 
@@ -614,20 +653,18 @@ async fn add_device_tag(
     auth.require_admin()?;
     let tid = tenant_from_headers(&auth, &headers)?;
     // Garante que device e tag pertencem ao mesmo tenant
-    let device_ok: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM devices WHERE id = $1 AND tenant_id = $2)",
-    )
-    .bind(id)
-    .bind(tid)
-    .fetch_one(&state.db)
-    .await?;
-    let tag_ok: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM tags WHERE id = $1 AND tenant_id = $2)",
-    )
-    .bind(body.tag_id)
-    .bind(tid)
-    .fetch_one(&state.db)
-    .await?;
+    let device_ok: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM devices WHERE id = $1 AND tenant_id = $2)")
+            .bind(id)
+            .bind(tid)
+            .fetch_one(&state.db)
+            .await?;
+    let tag_ok: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM tags WHERE id = $1 AND tenant_id = $2)")
+            .bind(body.tag_id)
+            .bind(tid)
+            .fetch_one(&state.db)
+            .await?;
     if !device_ok || !tag_ok {
         return Err(AppError::NotFound);
     }
@@ -962,8 +999,14 @@ async fn install_binary(
     let bytes = tokio::fs::read(path).await.map_err(anyhow::Error::new)?;
 
     Response::builder()
-        .header(CONTENT_TYPE, "application/vnd.microsoft.portable-executable")
-        .header(CONTENT_DISPOSITION, "attachment; filename=\"rustdesk-installer.exe\"")
+        .header(
+            CONTENT_TYPE,
+            "application/vnd.microsoft.portable-executable",
+        )
+        .header(
+            CONTENT_DISPOSITION,
+            "attachment; filename=\"rustdesk-installer.exe\"",
+        )
         .header(CONTENT_LENGTH, bytes.len().to_string())
         .body(Body::from(bytes))
         .map_err(|e| anyhow::Error::new(e).into())
@@ -1003,11 +1046,19 @@ async fn agent_binary_download(
         .map_err(anyhow::Error::new)??;
     }
 
-    let bytes = tokio::fs::read(&agent_path).await.map_err(anyhow::Error::new)?;
+    let bytes = tokio::fs::read(&agent_path)
+        .await
+        .map_err(anyhow::Error::new)?;
 
     Response::builder()
-        .header(CONTENT_TYPE, "application/vnd.microsoft.portable-executable")
-        .header(CONTENT_DISPOSITION, "attachment; filename=\"rustdesk-agent.exe\"")
+        .header(
+            CONTENT_TYPE,
+            "application/vnd.microsoft.portable-executable",
+        )
+        .header(
+            CONTENT_DISPOSITION,
+            "attachment; filename=\"rustdesk-agent.exe\"",
+        )
         .header(CONTENT_LENGTH, bytes.len().to_string())
         .body(Body::from(bytes))
         .map_err(|e| anyhow::Error::new(e).into())
@@ -1021,8 +1072,12 @@ async fn get_server_config(
     let global = config::load(&state.db).await?;
     let tid = tenant_from_headers(&auth, &headers).ok();
     let (password, install_code) = if let Some(tid) = tid {
-        let pwd = config::load_tenant_password(&state.db, tid).await.unwrap_or_default();
-        let code = config::ensure_tenant_install_code(&state.db, tid).await.unwrap_or_default();
+        let pwd = config::load_tenant_password(&state.db, tid)
+            .await
+            .unwrap_or_default();
+        let code = config::ensure_tenant_install_code(&state.db, tid)
+            .await
+            .unwrap_or_default();
         (pwd, code)
     } else {
         (String::new(), String::new())
@@ -1067,7 +1122,6 @@ async fn save_server_config(
 
     Ok(Json(json!({ "ok": true })))
 }
-
 
 // ── Cliente Customizado (branding por tenant) ──────────────────────────────────
 
@@ -1173,7 +1227,9 @@ async fn trigger_build(
     let tenant_id = tenant_from_headers(&auth, &headers)?;
     auth.require_admin()?;
     if !crate::builder::enabled() {
-        return Err(AppError::BadRequest("gerador de cliente desabilitado".to_string()));
+        return Err(AppError::BadRequest(
+            "gerador de cliente desabilitado".to_string(),
+        ));
     }
     let cfg = crate::builder::BuilderConfig::from_env().map_err(AppError::from)?;
     let b: TenantBranding = sqlx::query_as(
@@ -1184,11 +1240,15 @@ async fn trigger_build(
     .await?
     .ok_or_else(|| AppError::BadRequest("configure o branding primeiro".to_string()))?;
     if b.app_name.trim().is_empty() || b.file_name.trim().is_empty() {
-        return Err(AppError::BadRequest("app_name e file_name sao obrigatorios".to_string()));
+        return Err(AppError::BadRequest(
+            "app_name e file_name sao obrigatorios".to_string(),
+        ));
     }
     let server = config::load(&state.db).await?;
     if server.server_ip.trim().is_empty() || server.server_key.trim().is_empty() {
-        return Err(AppError::BadRequest("configure o servidor primeiro".to_string()));
+        return Err(AppError::BadRequest(
+            "configure o servidor primeiro".to_string(),
+        ));
     }
     let api_base = server.api_url.trim_end_matches('/').to_string();
     let api_server = format!("{}/t/{}", api_base, tenant_id);
@@ -1231,7 +1291,6 @@ async fn trigger_build(
     Ok(Json(json!({ "ok": true, "status": "queued" })))
 }
 
-
 // ── Download do cliente com marca (branded-{tenant}.exe) ────────────────────────
 
 async fn serve_branded(state: &AppState, tenant_id: Uuid) -> Result<Response<Body>, AppError> {
@@ -1260,9 +1319,14 @@ async fn serve_branded(state: &AppState, tenant_id: Uuid) -> Result<Response<Bod
             .map_err(|e| anyhow::Error::new(e).into());
     }
     // Backend local: artifact_url é um caminho de arquivo.
-    let bytes = tokio::fs::read(&artifact).await.map_err(anyhow::Error::new)?;
+    let bytes = tokio::fs::read(&artifact)
+        .await
+        .map_err(anyhow::Error::new)?;
     Response::builder()
-        .header(CONTENT_TYPE, "application/vnd.microsoft.portable-executable")
+        .header(
+            CONTENT_TYPE,
+            "application/vnd.microsoft.portable-executable",
+        )
         .header(
             CONTENT_DISPOSITION,
             format!("attachment; filename=\"{fname}.exe\""),

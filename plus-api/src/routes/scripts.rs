@@ -174,14 +174,13 @@ async fn get_script(
 ) -> Result<Json<Value>, AppError> {
     let tid = tenant_from_headers(&auth, &headers)?;
 
-    let script = sqlx::query_as::<_, Script>(
-        "SELECT * FROM scripts WHERE id = $1 AND tenant_id = $2",
-    )
-    .bind(id)
-    .bind(tid)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
+    let script =
+        sqlx::query_as::<_, Script>("SELECT * FROM scripts WHERE id = $1 AND tenant_id = $2")
+            .bind(id)
+            .bind(tid)
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or(AppError::NotFound)?;
 
     Ok(Json(json!(script)))
 }
@@ -228,14 +227,12 @@ async fn delete_script(
     auth.require_admin()?;
     let tid = tenant_from_headers(&auth, &headers)?;
 
-    let rows = sqlx::query(
-        "DELETE FROM scripts WHERE id = $1 AND tenant_id = $2",
-    )
-    .bind(id)
-    .bind(tid)
-    .execute(&state.db)
-    .await?
-    .rows_affected();
+    let rows = sqlx::query("DELETE FROM scripts WHERE id = $1 AND tenant_id = $2")
+        .bind(id)
+        .bind(tid)
+        .execute(&state.db)
+        .await?
+        .rows_affected();
 
     if rows == 0 {
         return Err(AppError::NotFound);
@@ -263,14 +260,13 @@ async fn run_script(
     }
 
     // Busca o script
-    let script = sqlx::query_as::<_, Script>(
-        "SELECT * FROM scripts WHERE id = $1 AND tenant_id = $2",
-    )
-    .bind(script_id)
-    .bind(tid)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
+    let script =
+        sqlx::query_as::<_, Script>("SELECT * FROM scripts WHERE id = $1 AND tenant_id = $2")
+            .bind(script_id)
+            .bind(tid)
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or(AppError::NotFound)?;
 
     // Determina os dispositivos alvo
     let target_device_uuids: Vec<String> = match body.target_type.as_str() {
@@ -285,7 +281,9 @@ async fn run_script(
             .await?
         }
         "tag" => {
-            let tag_id = body.tag_id.ok_or_else(|| AppError::BadRequest("tag_id obrigatório para target_type=tag".into()))?;
+            let tag_id = body.tag_id.ok_or_else(|| {
+                AppError::BadRequest("tag_id obrigatório para target_type=tag".into())
+            })?;
             sqlx::query_scalar::<_, String>(
                 r#"
                 SELECT d.uuid FROM devices d
@@ -300,12 +298,10 @@ async fn run_script(
         }
         _ => {
             // 'all' — todos os dispositivos do tenant (online ou não, agente decide)
-            sqlx::query_scalar::<_, String>(
-                "SELECT uuid FROM devices WHERE tenant_id = $1",
-            )
-            .bind(tid)
-            .fetch_all(&state.db)
-            .await?
+            sqlx::query_scalar::<_, String>("SELECT uuid FROM devices WHERE tenant_id = $1")
+                .bind(tid)
+                .fetch_all(&state.db)
+                .await?
         }
     };
 
@@ -408,12 +404,10 @@ async fn run_script(
 
     // Se todos falharam por falta de agente, marca o run como failed
     if sent == 0 && !device_rows.is_empty() {
-        sqlx::query(
-            "UPDATE script_runs SET status = 'failed', finished_at = now() WHERE id = $1",
-        )
-        .bind(run_id)
-        .execute(&state.db)
-        .await?;
+        sqlx::query("UPDATE script_runs SET status = 'failed', finished_at = now() WHERE id = $1")
+            .bind(run_id)
+            .execute(&state.db)
+            .await?;
     }
 
     Ok(Json(json!({
@@ -620,7 +614,11 @@ pub async fn persist_script_progress(
 
     if progress.all_done {
         // Determina o status final do device: done se o último step foi ok, senão failed
-        let final_status = if progress.status == "failed" { "failed" } else { "done" };
+        let final_status = if progress.status == "failed" {
+            "failed"
+        } else {
+            "done"
+        };
 
         sqlx::query(
             r#"

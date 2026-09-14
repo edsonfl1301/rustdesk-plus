@@ -646,10 +646,7 @@ func runInstall(hwnd uintptr) {
 	fmt.Fprintf(&sb, "key = '%s'\n", serverKey)
 	fmt.Fprintf(&sb, "custom-rendezvous-server = '%s'\n", serverIP)
 	fmt.Fprintf(&sb, "relay-server = '%s'\n", serverIP)
-	effectiveAPIURL := apiURL
-	if apiURL != "" && tenantID != "" {
-		effectiveAPIURL = strings.TrimRight(apiURL, "/") + "/t/" + tenantID
-	}
+	effectiveAPIURL := tenantAPIURL(apiURL, tenantID)
 	if effectiveAPIURL != "" {
 		fmt.Fprintf(&sb, "api-server = '%s'\n", effectiveAPIURL)
 	}
@@ -715,7 +712,10 @@ func applyRustDeskOptions() error {
 		{"relay-server", serverIP},
 	}
 	if apiURL != "" {
-		effectiveAPIURL := strings.TrimRight(apiURL, "/") + "/t/" + tenantID
+		effectiveAPIURL := tenantAPIURL(apiURL, tenantID)
+		if effectiveAPIURL == "" {
+			return fmt.Errorf("tenant_id ausente; não é seguro configurar a API sem identificar o cliente")
+		}
 		options = append(options, [2]string{"api-server", effectiveAPIURL})
 	}
 	for _, opt := range options {
@@ -726,6 +726,21 @@ func applyRustDeskOptions() error {
 		}
 	}
 	return nil
+}
+
+// tenantAPIURL devolve sempre a URL multi-tenant usada pelo heartbeat e pela
+// auditoria. Também corrige uma URL que já tenha recebido /t/<uuid>, evitando
+// duplicações ao reinstalar ou atualizar um cliente.
+func tenantAPIURL(base, tenant string) string {
+	base = strings.TrimRight(strings.TrimSpace(base), "/")
+	tenant = strings.TrimSpace(tenant)
+	if base == "" || tenant == "" {
+		return ""
+	}
+	if i := strings.LastIndex(base, "/t/"); i >= 0 {
+		base = strings.TrimRight(base[:i], "/")
+	}
+	return base + "/t/" + tenant
 }
 
 func clearRustDeskConfigDirs() {

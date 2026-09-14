@@ -12,7 +12,12 @@ use uuid::Uuid;
 /// Liga/desliga todo o recurso. Padrão: desligado.
 pub fn enabled() -> bool {
     std::env::var("CLIENT_BUILDER_ENABLED")
-        .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .map(|v| {
+            matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
         .unwrap_or(false)
 }
 
@@ -118,8 +123,14 @@ pub async fn dispatch(cfg: &BuilderConfig, inputs: serde_json::Value) -> anyhow:
 }
 
 /// (status, conclusion) do run.
-pub async fn run_status(cfg: &BuilderConfig, run_id: i64) -> anyhow::Result<(String, Option<String>)> {
-    let url = format!("https://api.github.com/repos/{}/actions/runs/{}", cfg.repo, run_id);
+pub async fn run_status(
+    cfg: &BuilderConfig,
+    run_id: i64,
+) -> anyhow::Result<(String, Option<String>)> {
+    let url = format!(
+        "https://api.github.com/repos/{}/actions/runs/{}",
+        cfg.repo, run_id
+    );
     let v = get_json(cfg, &url).await?;
     let status = v["status"].as_str().unwrap_or("unknown").to_string();
     let conclusion = v["conclusion"].as_str().map(|s| s.to_string());
@@ -137,12 +148,16 @@ pub async fn download_exe(
         cfg.repo, run_id
     );
     let v = get_json(cfg, &url).await?;
-    let arts = v["artifacts"].as_array().ok_or_else(|| anyhow!("sem artifacts"))?;
+    let arts = v["artifacts"]
+        .as_array()
+        .ok_or_else(|| anyhow!("sem artifacts"))?;
     let art = arts
         .iter()
         .find(|a| a["name"].as_str() == Some(artifact_name))
         .ok_or_else(|| anyhow!("artifact nao encontrado"))?;
-    let art_id = art["id"].as_i64().ok_or_else(|| anyhow!("artifact sem id"))?;
+    let art_id = art["id"]
+        .as_i64()
+        .ok_or_else(|| anyhow!("artifact sem id"))?;
     let dl = format!(
         "https://api.github.com/repos/{}/actions/artifacts/{}/zip",
         cfg.repo, art_id

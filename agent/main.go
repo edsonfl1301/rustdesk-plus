@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -52,6 +53,88 @@ func getRustDeskID() string {
 		return ""
 	}
 	return strings.TrimSpace(string(output))
+}
+
+var (
+	sessionStartPattern = regexp.MustCompile(`Session ([0-9]+) start`)
+	sessionClosePattern = regexp.MustCompile(`Exit io_loop of id=([0-9]+)`)
+)
+
+type AgentAuditEvent struct {
+	SourceUUID        string `json:"source_uuid"`
+	SourceRustDeskID  string `json:"source_rustdesk_id"`
+	SourceHostname    string `json:"source_hostname"`
+	TargetRustDeskID  string `json:"target_rustdesk_id"`
+	Action            string `json:"action"`
+}
+
+func sendAgentAudit(sourceID, hostname, targetID, action string) {
+	if tenantID == "" || apiURL == "" || sourceID == "" || targetID == "" {
+		return
+	}
+	payload, _ := json.Marshal(AgentAuditEvent{
+		SourceUUID: getDeviceUUID(), SourceRustDeskID: sourceID,
+		SourceHostname: hostname, TargetRustDeskID: targetID, Action: action,
+	})
+	endpoint := strings.TrimRight(apiURL, "/") + "/t/" + tenantID + "/api/audit/agent"
+	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err == nil {
+		resp.Body.Close()
+	}
+}
+
+// Monitora somente novas linhas dos logs do cliente controlador. O RustDesk
+// registra ali o começo e o fim reais mesmo quando o callback nativo falha.
+func startAuditMonitor() {
+	go func() {
+		hostname, _ := os.Hostname()
+		sourceID := getRustDeskID()
+		offsets := make(map[string]int64)
+		initialized := make(map[string]bool)
+		for {
+			paths, _ := filepath.Glob(`C:\Users\*\AppData\Roaming\RustDesk\log\RustDesk_rCURRENT.log`)
+			for _, path := range paths {
+				info, err := os.Stat(path)
+				if err != nil {
+					continue
+				}
+				if !initialized[path] {
+					offsets[path] = info.Size()
+					initialized[path] = true
+					continue
+				}
+				if info.Size() < offsets[path] {
+					offsets[path] = 0
+				}
+				if info.Size() == offsets[path] {
+					continue
+				}
+				f, err := os.Open(path)
+				if err != nil {
+					continue
+				}
+				_, _ = f.Seek(offsets[path], io.SeekStart)
+				scanner := bufio.NewScanner(f)
+				for scanner.Scan() {
+					line := scanner.Text()
+					if match := sessionStartPattern.FindStringSubmatch(line); len(match) == 2 {
+						go sendAgentAudit(sourceID, hostname, match[1], "start")
+					} else if match := sessionClosePattern.FindStringSubmatch(line); len(match) == 2 {
+						go sendAgentAudit(sourceID, hostname, match[1], "close")
+					}
+				}
+				offsets[path], _ = f.Seek(0, io.SeekCurrent)
+				f.Close()
+			}
+			time.Sleep(2 * time.Second)
+		}
+	}()
 }
 
 // ── Protocolo — exec legado ──────────────────────────────────────────────────
@@ -673,5 +756,6 @@ func main() {
 	uuid := getDeviceUUID()
 	fmt.Fprintf(os.Stdout, "[agent] iniciando — UUID: %s versão: %s\n", uuid, agentVersion)
 	startAutoUpdater()
+	startAuditMonitor()
 	connect(uuid)
 }

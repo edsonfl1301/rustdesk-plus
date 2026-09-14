@@ -18,6 +18,7 @@ services:
     networks: [backend]
 
   hbbr:
+    image: ${RUSTDESK_SERVER_IMAGE:-rustdesk-plus-server:local}
     build:
       context: .
       dockerfile: deploy/rustdesk-server/Dockerfile
@@ -32,6 +33,7 @@ services:
     networks: [backend]
 
   hbbs:
+    image: ${RUSTDESK_SERVER_IMAGE:-rustdesk-plus-server:local}
     build:
       context: .
       dockerfile: deploy/rustdesk-server/Dockerfile
@@ -52,6 +54,7 @@ services:
     networks: [backend]
 
   plus-api:
+    image: ${PLUS_API_IMAGE:-rustdesk-plus-api:local}
     build:
       context: .
       dockerfile: plus-api/Dockerfile
@@ -60,6 +63,7 @@ services:
       DATABASE_URL: postgres://plusapi:${POSTGRES_PASSWORD:-plusapi}@postgres:5432/plusapi
       JWT_SECRET: ${JWT_SECRET:-change-me-before-production}
       BIND_ADDR: 0.0.0.0:21114
+      HBBS_PRESENCE_ADDR: hbbs:21115
       RUSTDESK_KEY_PATH: /rustdesk-data/id_ed25519.pub
       DEPLOYMENT_HOST_PATH: /deployment/public_host
       INSTALLER_PATH: /generated/rustdesk-installer.exe
@@ -83,6 +87,7 @@ services:
     networks: [backend]
 
   dashboard:
+    image: ${DASHBOARD_IMAGE:-rustdesk-plus-dashboard:local}
     build:
       context: .
       dockerfile: dashboard/Dockerfile

@@ -108,6 +108,11 @@ pub struct CreateUser {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ResetUserPassword {
+    pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CreateBranch {
     pub name: String,
     pub parent_id: Option<Uuid>,
@@ -152,7 +157,6 @@ pub struct ExecRequest {
     pub targets: Option<Vec<String>>,
     pub tag_id: Option<Uuid>,
 }
-
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct TenantBranding {

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   downloadInstaller,
+  getActiveTenantId,
   getServerConfig,
   saveServerConfig,
   isSuperAdmin,
@@ -46,6 +47,10 @@ export default function SettingsPage() {
 
   const user = getStoredUser();
   const superAdmin = user ? isSuperAdmin(user) : false;
+  const activeTenantId = getActiveTenantId();
+  const tenantApiUrl = config.api_url && activeTenantId
+    ? `${config.api_url.replace(/\/t\/[^/]+\/?$/, "").replace(/\/$/, "")}/t/${activeTenantId}`
+    : config.api_url;
 
   useEffect(() => {
     getServerConfig().then(setConfig).catch(() => {});
@@ -97,7 +102,7 @@ export default function SettingsPage() {
         `key = '${config.server_key}'`,
         `custom-rendezvous-server = '${config.server_ip}'`,
         `relay-server = '${config.server_ip}'`,
-        config.api_url ? `api-server = '${config.api_url}'` : null,
+        tenantApiUrl ? `api-server = '${tenantApiUrl}'` : null,
       ]
         .filter((line) => line !== null)
         .join("\n")
@@ -199,6 +204,9 @@ export default function SettingsPage() {
             </h2>
             <CopyButton text={rustdeskToml} />
           </div>
+          <p className="text-xs text-slate-400 mb-3">
+            Configuração efetiva deste cliente. A chave pública fica separada da URL da API.
+          </p>
           <pre className="bg-[#0f172a] text-green-400 text-xs rounded-2xl p-4 overflow-x-auto font-mono leading-relaxed">
             {rustdeskToml}
           </pre>

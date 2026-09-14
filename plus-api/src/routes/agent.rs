@@ -35,12 +35,7 @@ async fn agent_ws(
     ws.on_upgrade(move |socket| handle_agent(socket, uuid, params, state))
 }
 
-async fn handle_agent(
-    mut socket: WebSocket,
-    uuid: String,
-    params: AgentParams,
-    state: AppState,
-) {
+async fn handle_agent(mut socket: WebSocket, uuid: String, params: AgentParams, state: AppState) {
     let Some(tenant_id) = params.tenant_id else {
         tracing::warn!("agente sem tenant_id rejeitado: uuid={uuid}");
         return;
@@ -134,7 +129,11 @@ async fn handle_agent(
     tracing::info!("agent disconnected: {uuid} -> {registered_uuid} (tenant={tenant_id})");
 }
 
-async fn ensure_agent_device(state: &AppState, tenant_id: Uuid, params: &AgentParams) -> Option<String> {
+async fn ensure_agent_device(
+    state: &AppState,
+    tenant_id: Uuid,
+    params: &AgentParams,
+) -> Option<String> {
     let hostname = params
         .hostname
         .clone()
@@ -278,15 +277,16 @@ async fn persist_result(state: &AppState, tenant_id: Uuid, r: AgentResult) -> an
         .await
         .unwrap_or(r.device_uuid);
 
-    let device_id: Option<uuid::Uuid> = sqlx::query_scalar(
-        "SELECT id FROM devices WHERE uuid = $1 AND tenant_id = $2",
-    )
-    .bind(&resolved_uuid)
-    .bind(tenant_id)
-    .fetch_optional(&state.db)
-    .await?;
+    let device_id: Option<uuid::Uuid> =
+        sqlx::query_scalar("SELECT id FROM devices WHERE uuid = $1 AND tenant_id = $2")
+            .bind(&resolved_uuid)
+            .bind(tenant_id)
+            .fetch_optional(&state.db)
+            .await?;
 
-    let Some(device_id) = device_id else { return Ok(()) };
+    let Some(device_id) = device_id else {
+        return Ok(());
+    };
 
     sqlx::query(
         r#"

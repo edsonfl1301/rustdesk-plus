@@ -43,6 +43,7 @@ O RustDesk Plus é uma solução self-hosted multi-tenant que combina:
 | **Auto-registro de dispositivos** | PCs aparecem no painel automaticamente ao conectar ao servidor |
 | **Auto-filial por IP** | Dispositivos na mesma rede herdam a filial automaticamente (por tenant) |
 | **Dashboard em tempo real** | Stats por cliente: dispositivos, online/offline, filiais, usuários |
+| **Auditoria de conexões** | Origem, destino, IP, tipo, operador do painel, início, fim e duração real da sessão |
 | **3 modos de visualização** | Grid / Lista / Compacto na página de Dispositivos |
 | **Tags coloridas** | Tags ilimitadas por tenant para organizar e filtrar dispositivos |
 | **Filiais hierárquicas** | Estrutura de filiais com suporte a pai/filho, por tenant |
@@ -101,12 +102,28 @@ O gateway Caddy roteia:
 | Frontend | Next.js 15 · React 19 · TypeScript · Tailwind CSS 4 |
 | Agente | Go 1.24 · gorilla/websocket |
 | Instalador | Go 1.24 · Win32 API nativa (user32/gdi32/comctl32) |
-| Servidor RustDesk | hbbs + hbbr (imagem oficial `rustdesk/rustdesk-server`) |
+| Servidor RustDesk | `hbbs` com troca segura para clientes autenticados + `hbbr` oficial |
 | Infra | Docker Compose · Caddy 2 |
 
 ---
 
 ## Instalação Rápida
+
+O repositório aceita duas formas de instalação:
+
+- `./install.sh` compila as imagens no próprio servidor.
+- As imagens publicadas pelo GitHub Actions podem ser informadas no `.env` como
+  `PLUS_API_IMAGE`, `DASHBOARD_IMAGE` e `RUSTDESK_SERVER_IMAGE`. Nesse modo, use
+  `docker compose -f docker-compose.plus.yml pull` e depois
+  `docker compose -f docker-compose.plus.yml up -d --no-build`.
+
+As imagens oficiais deste repositório são:
+
+```text
+ghcr.io/edsonfl1301/rustdesk-plus-api:latest
+ghcr.io/edsonfl1301/rustdesk-plus-dashboard:latest
+ghcr.io/edsonfl1301/rustdesk-plus-server:latest
+```
 
 ### Pré-requisitos
 
@@ -332,9 +349,44 @@ X-Tenant-Id: <uuid-do-tenant>
 | `POST` | `/setup` | `{ email, password, name, server_ip, api_url, tenant_name }` |
 | `GET` | `/health` | Health check |
 
+### Login e catálogo no cliente RustDesk
+
+O cliente desktop oficial pode usar a mesma conta de tenant do painel. Configure
+o campo **API Server** com a URL pública do RustDesk Plus e entre com o e-mail e a
+senha já cadastrados. Contas `super_admin` não são aceitas no aplicativo porque
+não possuem um tenant único; crie ou use uma conta `admin`, `operator` ou `viewer`
+do cliente desejado.
+
+| Método | Rota | Descrição |
+|---|---|---|
+| `GET` | `/api/login-options` | Informa os métodos de login disponíveis |
+| `POST` | `/api/login` | Autentica a conta no formato esperado pelo cliente RustDesk |
+| `POST` | `/api/currentUser` | Restaura a sessão salva pelo cliente |
+| `GET` | `/api/ab` | Entrega os dispositivos, tags e filiais do tenant como catálogo |
+| `GET` | `/api/device-group/accessible` | Lista as filiais acessíveis na tela de grupos |
+| `GET` | `/api/users` | Lista os usuários do tenant na tela de grupos |
+| `GET` | `/api/peers` | Lista e pagina os computadores do tenant na tela de grupos |
+| `POST` | `/api/logout` | Encerra a sessão local do cliente |
+
+O catálogo é gerenciado pelo painel. IDs, aliases, descrições, tags e filiais são
+sincronizados para o aplicativo, mas o RustDesk Plus não envia senhas de acesso
+remoto no catálogo.
+
 ### Dispositivos, Usuários, Filiais, Tags, Exec
 
 Todas as rotas `/admin/*` já documentadas na v1.0 continuam funcionando, agora filtradas por tenant automaticamente.
+
+### Auditoria de conexões
+
+| Método | Rota | Descrição |
+|---|---|---|
+| `POST` | `/t/:tenant_id/api/audit/conn` | Recebe abertura, autenticação e fechamento enviados pelo cliente RustDesk |
+| `GET` | `/admin/audit/connections` | Lista o histórico do tenant, com busca e paginação |
+| `POST` | `/admin/devices/:id/connect` | Registra o usuário do painel que iniciou a conexão |
+
+O cliente RustDesk envia os eventos reais para a URL configurada em `api-server`. O backend correlaciona os eventos por dispositivo, conexão e sessão, elimina reenvios pelo `nonce` e calcula a duração entre abertura e fechamento. Conexões iniciadas fora do painel também aparecem; nesse caso, o operador é identificado pelo ID e nome do peer informados pelo próprio RustDesk.
+
+Nos computadores instalados pelo painel, a configuração efetiva deve aparecer como `api-server = 'http://SERVIDOR/t/UUID_DO_CLIENTE'`. A chave pública permanece separada na opção `key`; ela não faz parte da URL da API.
 
 ---
 
@@ -525,4 +577,4 @@ MIT (c) 2026 Contribuidores do RustDesk Plus — veja [LICENSE](LICENSE)
 
 ---
 
-> **Aviso legal:** Este projeto não tem afiliação com o projeto RustDesk oficial nem com a Purslane Ltd. O cliente RustDesk e o servidor (`hbbs`/`hbbr`) são licenciados sob AGPL-3.0. O RustDesk Plus é um serviço completamente independente que se comunica com eles via HTTP sem modificar nenhum código original. Os binários `hbbs` e `hbbr` são obtidos diretamente da imagem Docker oficial `rustdesk/rustdesk-server` sem alterações.
+> **Aviso legal:** Este projeto não tem afiliação com o projeto RustDesk oficial nem com a Purslane Ltd. O cliente RustDesk e o servidor (`hbbs`/`hbbr`) são licenciados sob AGPL-3.0. A imagem do servidor compila o `hbbs` a partir do commit público `b9d886495f4cabcaba5e4ecea71262dcf2d42776`, proposto no PR oficial [rustdesk-server#699](https://github.com/rustdesk/rustdesk-server/pull/699), para responder à troca de chaves de clientes autenticados. O `hbbr` vem da imagem oficial `rustdesk/rustdesk-server:1.1.15`. O código-fonte correspondente e os avisos de licença permanecem disponíveis nos links fixados pelo `Dockerfile`.

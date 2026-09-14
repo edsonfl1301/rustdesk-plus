@@ -21,13 +21,12 @@
 
     # Rotas da API e WebSocket → plus-api
     @api {
-        path /admin/* /api/* /ws/* /setup /setup/* /super/* /health /t/* /i/* /install/*
+        path /admin/* /api/* /ws/* /setup /setup/* /super/* /health /t/* /i/* /install/* /agent-version /agent/*
     }
     handle @api {
         reverse_proxy plus-api:21114 {
             header_up Host {host}
-            header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
+            header_up X-Real-IP {client_ip}
             header_up X-Forwarded-Proto {scheme}
         }
     }

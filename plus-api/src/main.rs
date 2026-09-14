@@ -5,6 +5,7 @@ mod db;
 mod error;
 mod installer;
 mod models;
+mod presence;
 mod routes;
 mod state;
 
@@ -17,9 +18,17 @@ async fn health() -> &'static str {
 }
 
 async fn offline_sweeper(db: sqlx::PgPool) {
+    let hbbs = std::env::var("HBBS_PRESENCE_ADDR")
+        .ok()
+        .filter(|s| !s.trim().is_empty());
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
     loop {
         interval.tick().await;
+        if let Some(address) = hbbs.as_deref() {
+            if let Err(error) = presence::refresh(&db, address).await {
+                tracing::warn!("hbbs presence refresh failed: {error:#}");
+            }
+        }
         let result = sqlx::query(
             "UPDATE devices SET online = false WHERE online = true AND last_seen_at < now() - interval '60 seconds'",
         )
@@ -48,6 +57,7 @@ async fn main() {
     let app = Router::new()
         .route("/health", get(health))
         .merge(routes::admin::router())
+        .merge(routes::audit::router())
         .merge(routes::scripts::router())
         .merge(routes::client::router())
         .merge(routes::agent::router())
@@ -61,7 +71,10 @@ async fn main() {
         .unwrap_or_else(|e| panic!("failed to bind plus-api listener on {bind_addr}: {e}"));
 
     tracing::info!("plus-api listening on {bind_addr}");
-    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
-        .await
-        .expect("server error");
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .expect("server error");
 }

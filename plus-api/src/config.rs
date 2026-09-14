@@ -16,7 +16,9 @@ pub struct ServerConfig {
 fn generate_password() -> String {
     const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     let mut rng = rand::thread_rng();
-    (0..8).map(|_| CHARSET[rng.gen_range(0..CHARSET.len())] as char).collect()
+    (0..8)
+        .map(|_| CHARSET[rng.gen_range(0..CHARSET.len())] as char)
+        .collect()
 }
 
 async fn upsert_global(db: &PgPool, key: &str, value: &str) -> anyhow::Result<()> {
@@ -56,7 +58,11 @@ pub async fn load_tenant_password(db: &PgPool, tenant_id: Uuid) -> anyhow::Resul
     Ok(pwd.unwrap_or_default())
 }
 
-pub async fn save_tenant_password(db: &PgPool, tenant_id: Uuid, password: &str) -> anyhow::Result<()> {
+pub async fn save_tenant_password(
+    db: &PgPool,
+    tenant_id: Uuid,
+    password: &str,
+) -> anyhow::Result<()> {
     upsert_tenant(db, tenant_id, "rustdesk_password", password).await?;
     invalidate_tenant_installer(tenant_id).await;
     Ok(())
@@ -68,7 +74,12 @@ pub async fn save_tenant_password(db: &PgPool, tenant_id: Uuid, password: &str) 
 /// scripts e conexão WS). Controlado pela env `AGENT_ENABLED`. Padrão: desligado.
 pub fn agent_enabled() -> bool {
     std::env::var("AGENT_ENABLED")
-        .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .map(|v| {
+            matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
         .unwrap_or(false)
 }
 
@@ -116,10 +127,7 @@ pub async fn synchronize(db: &PgPool) -> anyhow::Result<()> {
         }
     }
 
-    for (env_key, config_key) in [
-        ("PUBLIC_HOST", "server_ip"),
-        ("PUBLIC_API_URL", "api_url"),
-    ] {
+    for (env_key, config_key) in [("PUBLIC_HOST", "server_ip"), ("PUBLIC_API_URL", "api_url")] {
         if let Ok(value) = std::env::var(env_key) {
             if !value.trim().is_empty() {
                 let exists: bool = sqlx::query_scalar(
@@ -147,8 +155,9 @@ pub async fn synchronize(db: &PgPool) -> anyhow::Result<()> {
 
 pub async fn load(db: &PgPool) -> anyhow::Result<ServerConfig> {
     synchronize(db).await?;
-    let rows: Vec<(String, String)> =
-        sqlx::query_as("SELECT key, value FROM server_config").fetch_all(db).await?;
+    let rows: Vec<(String, String)> = sqlx::query_as("SELECT key, value FROM server_config")
+        .fetch_all(db)
+        .await?;
     let mut config = ServerConfig {
         server_ip: String::new(),
         server_key: String::new(),
