@@ -246,6 +246,7 @@ Cada cliente tem uma senha de 8 caracteres (A-Z0-9), gerada automaticamente.
 - **Visível em**: Configuração → "Senha Padrão de Acesso Remoto"
 - **Embutida no instalador**: o `.exe` de cada cliente já vem com a senha configurada
 - **Usada na conexão**: o botão "Conectar" no dashboard abre `rustdesk://<id>?password=<senha>` automaticamente
+- **Cliente desktop**: contas `admin` e `operator` recebem a senha no catálogo autenticado e conectam sem digitá-la; contas `viewer` não recebem a credencial
 
 ---
 
@@ -354,8 +355,9 @@ X-Tenant-Id: <uuid-do-tenant>
 O cliente desktop oficial pode usar a mesma conta de tenant do painel. Configure
 o campo **API Server** com a URL pública do RustDesk Plus e entre com o e-mail e a
 senha já cadastrados. Contas `super_admin` não são aceitas no aplicativo porque
-não possuem um tenant único; crie ou use uma conta `admin`, `operator` ou `viewer`
-do cliente desejado.
+não possuem um tenant único. Contas `admin` e `operator` podem conectar usando a
+senha remota compartilhada pelo catálogo; contas `viewer` recebem o inventário,
+mas precisam de autorização separada para iniciar uma sessão remota.
 
 | Método | Rota | Descrição |
 |---|---|---|

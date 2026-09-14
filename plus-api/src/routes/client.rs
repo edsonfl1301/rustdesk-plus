@@ -367,6 +367,16 @@ async fn sysinfo_ver() -> impl IntoResponse {
 
 async fn ab_get(State(state): State<AppState>, auth: AuthUser) -> Result<Json<Value>, AppError> {
     let tenant_id = auth.tenant_id.ok_or(AppError::Forbidden)?;
+    // The native client treats `password` on a shared address-book peer as the
+    // unattended-access password. Only roles allowed to operate devices receive
+    // it; inventory-only users keep the catalog without the credential.
+    let shared_password = if can_connect_remotely(&auth.role) {
+        crate::config::load_tenant_password(&state.db, tenant_id)
+            .await
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
 
     let device_rows = sqlx::query(
         r#"
@@ -431,6 +441,7 @@ async fn ab_get(State(state): State<AppState>, auth: AuthUser) -> Result<Json<Va
 
         peers.push(json!({
             "id": rustdesk_id,
+            "password": shared_password,
             "hostname": hostname.clone().unwrap_or_default(),
             "platform": rustdesk_platform(os.as_deref()),
             "alias": alias.filter(|s| !s.trim().is_empty())
@@ -452,6 +463,10 @@ async fn ab_get(State(state): State<AppState>, auth: AuthUser) -> Result<Json<Va
     }))
     .map_err(anyhow::Error::new)?;
     Ok(Json(json!({ "data": data })))
+}
+
+fn can_connect_remotely(role: &str) -> bool {
+    matches!(role, "admin" | "operator")
 }
 
 async fn ab_set() -> impl IntoResponse {
@@ -652,7 +667,15 @@ fn flutter_color(color: &str) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{flutter_color, rustdesk_platform};
+    use super::{can_connect_remotely, flutter_color, rustdesk_platform};
+
+    #[test]
+    fn shares_remote_password_only_with_operating_roles() {
+        assert!(can_connect_remotely("admin"));
+        assert!(can_connect_remotely("operator"));
+        assert!(!can_connect_remotely("viewer"));
+        assert!(!can_connect_remotely("super_admin"));
+    }
 
     #[test]
     fn maps_platform_names_used_by_the_client() {
