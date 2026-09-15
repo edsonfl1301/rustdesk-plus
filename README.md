@@ -20,6 +20,10 @@ Gerencie múltiplos clientes (tenants) em um único servidor — cada um com seu
 
 ## O que é o RustDesk Plus
 
+Para entender a implementação e personalizar a solução, consulte o
+[Guia do desenvolvedor](docs/GUIA-DESENVOLVEDOR.md). Ele cobre o cliente desktop,
+as rotas da API, o servidor RustDesk, testes, implantação e limites de segurança.
+
 O RustDesk Plus é uma solução self-hosted multi-tenant que combina:
 
 - **Servidor RustDesk** (`hbbs` + `hbbr`) — embutido no stack Docker, compartilhado entre todos os clientes
