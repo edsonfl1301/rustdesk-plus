@@ -111,7 +111,8 @@ O gateway Caddy roteia:
 
 O repositório aceita duas formas de instalação:
 
-- `./install.sh` compila as imagens no próprio servidor.
+- `./install.sh` baixa as imagens públicas e inicia os serviços sem compilar no servidor.
+- `INSTALL_MODE=build ./install.sh` compila as imagens no próprio servidor.
 - As imagens publicadas pelo GitHub Actions podem ser informadas no `.env` como
   `PLUS_API_IMAGE`, `DASHBOARD_IMAGE` e `RUSTDESK_SERVER_IMAGE`. Nesse modo, use
   `docker compose -f docker-compose.plus.yml pull` e depois
@@ -134,7 +135,7 @@ ghcr.io/edsonfl1301/rustdesk-plus-server:latest
 ### Via script (recomendado)
 
 ```bash
-git clone https://github.com/ReisJuliano/rustdesk-plus.git
+git clone https://github.com/edsonfl1301/rustdesk-plus.git
 cd rustdesk-plus
 chmod +x install.sh
 ./install.sh
@@ -146,13 +147,18 @@ O script `install.sh`:
 3. Gera `POSTGRES_PASSWORD` e `JWT_SECRET` aleatórios com `openssl rand -hex 32`
 4. Cria o arquivo `.env` com todos os valores
 5. Cria os diretórios de volumes
-6. Executa `docker compose up -d --build`
+6. Executa `docker compose -f docker-compose.plus.yml pull` e depois `up -d --no-build`; use `INSTALL_MODE=build ./install.sh` para compilar localmente
 7. Exibe a URL de acesso
+
+Em instalações anteriores que já possuem um `.env` sem as três variáveis de
+imagem, `./install.sh` continua compilando localmente. Para migrar esse servidor
+para as imagens prontas, adicione as três variáveis mostradas em `.env.example`
+e execute novamente o script.
 
 ### Manual (passo a passo)
 
 ```bash
-git clone https://github.com/ReisJuliano/rustdesk-plus.git
+git clone https://github.com/edsonfl1301/rustdesk-plus.git
 cd rustdesk-plus
 
 cat > .env <<EOF
@@ -170,7 +176,7 @@ EOF
 mkdir -p data/rustdesk data/deployment data/generated plus-data/postgres
 echo -n "IP_OU_DOMINIO_DO_SERVIDOR" > data/deployment/public_host
 
-docker compose up -d --build
+docker compose -f docker-compose.plus.yml up -d --build
 ```
 
 ---

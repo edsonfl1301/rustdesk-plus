@@ -9,6 +9,20 @@ else
   SUDO="sudo"
 fi
 
+COMPOSE_FILE="docker-compose.plus.yml"
+INSTALL_MODE_EXPLICIT="${INSTALL_MODE+x}"
+INSTALL_MODE="${INSTALL_MODE:-images}"
+
+case "$INSTALL_MODE" in
+  images|build) ;;
+  *) echo "INSTALL_MODE deve ser 'images' ou 'build'."; exit 1 ;;
+esac
+
+if [ ! -f "$COMPOSE_FILE" ]; then
+  echo "Arquivo $COMPOSE_FILE não encontrado. Execute o script na raiz do repositório."
+  exit 1
+fi
+
 DOCKER_COMPOSE=""
 
 detect_compose() {
@@ -87,6 +101,9 @@ HTTPS_PORT=443
 PUBLIC_HOST=$public_host
 PUBLIC_API_URL=$api_url
 CADDY_ADDR=$caddy_addr
+PLUS_API_IMAGE=ghcr.io/edsonfl1301/rustdesk-plus-api:latest
+DASHBOARD_IMAGE=ghcr.io/edsonfl1301/rustdesk-plus-dashboard:latest
+RUSTDESK_SERVER_IMAGE=ghcr.io/edsonfl1301/rustdesk-plus-server:latest
 EOF
 fi
 
@@ -97,7 +114,25 @@ if [ -n "$public_host" ]; then
   printf "%s" "$public_host" > data/deployment/public_host
 fi
 
-$SUDO $DOCKER_COMPOSE up -d --build
+if [ "$INSTALL_MODE" = "images" ]; then
+  if ! grep -q '^PLUS_API_IMAGE=' .env ||
+     ! grep -q '^DASHBOARD_IMAGE=' .env ||
+     ! grep -q '^RUSTDESK_SERVER_IMAGE=' .env; then
+    if [ -n "$INSTALL_MODE_EXPLICIT" ]; then
+      echo "Para INSTALL_MODE=images, configure PLUS_API_IMAGE, DASHBOARD_IMAGE e RUSTDESK_SERVER_IMAGE no .env."
+      exit 1
+    fi
+    echo "Arquivo .env anterior sem imagens GHCR; compilando localmente para preservar o comportamento original."
+    INSTALL_MODE=build
+  fi
+fi
+
+if [ "$INSTALL_MODE" = "images" ]; then
+  $SUDO $DOCKER_COMPOSE -f "$COMPOSE_FILE" pull
+  $SUDO $DOCKER_COMPOSE -f "$COMPOSE_FILE" up -d --no-build
+else
+  $SUDO $DOCKER_COMPOSE -f "$COMPOSE_FILE" up -d --build
+fi
 
 caddy_addr="$(sed -n 's/^CADDY_ADDR=//p' .env | tail -n 1)"
 public_url="$(sed -n 's/^PUBLIC_API_URL=//p' .env | tail -n 1)"
